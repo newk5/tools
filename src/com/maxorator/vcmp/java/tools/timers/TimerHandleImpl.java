@@ -14,6 +14,11 @@ public class TimerHandleImpl implements TimerHandle {
         return timerRegistry.isTimerActive(uniqueId);
     }
 
+	@Override
+	public long getIterations() {
+		return timerRegistry.getIterations(uniqueId);
+	}
+
     @Override
     public void cancel() {
         timerRegistry.cancelTimer(uniqueId);

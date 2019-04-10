@@ -17,15 +17,15 @@ public class TimerRegistry {
 
     }
 
-    public TimerHandle register(boolean isRecurring, long waitTime, Runnable runnable) {
+	public TimerHandle register(long iterations, long waitTime, Runnable runnable) {
         long uniqueId = idIncrementor.incrementAndGet();
-        registerWithId(null, uniqueId, isRecurring, waitTime, runnable);
+		registerWithId(null, uniqueId, iterations, waitTime, runnable);
         return new TimerHandleImpl(uniqueId, this);
     }
 
-    private void registerWithId(TimerRunInstance previous, long uniqueId, boolean isRecurring, long waitTime, Runnable runnable) {
+	private void registerWithId(TimerRunInstance previous, long uniqueId, long iterations, long waitTime, Runnable runnable) {
         long executionStart = System.currentTimeMillis() + waitTime;
-        TimerRunInstance instance = new TimerRunInstance(uniqueId, executionStart, isRecurring, waitTime, runnable);
+		TimerRunInstance instance = new TimerRunInstance(uniqueId, executionStart, iterations, waitTime, runnable);
 
         synchronized (lock) {
             if (activeTimers.get(uniqueId) == previous) {
@@ -55,9 +55,11 @@ public class TimerRegistry {
             while ((instance = retrieveNext()) != null) {
                 instance.runnable.run();
 
-                if (instance.isRecurring) {
-                    registerWithId(instance, instance.uniqueId, true, instance.waitTime, instance.runnable);
-                } else {
+				if (instance.iterations == 0) {
+					registerWithId(instance, instance.uniqueId, 0, instance.waitTime, instance.runnable);
+				} else if (instance.iterations != 1) {
+					registerWithId(instance, instance.uniqueId, instance.iterations - 1, instance.waitTime, instance.runnable);
+				} else {
                     synchronized (lock) {
                         activeTimers.remove(instance.uniqueId);
                     }
@@ -65,6 +67,15 @@ public class TimerRegistry {
             }
         }
     }
+
+	long getIterations(long uniqueId) {
+		synchronized (lock) {
+			if (isTimerActive(uniqueId)) {
+				return activeTimers.get(uniqueId).iterations;
+			}
+			return -1;
+		}
+	}
 
     boolean isTimerActive(long uniqueId) {
         synchronized (lock) {
@@ -85,14 +96,14 @@ public class TimerRegistry {
 
         public final long uniqueId;
         public final long executionStart;
-        public final boolean isRecurring;
+		public final long iterations;
         public final long waitTime;
         public final Runnable runnable;
 
-        private TimerRunInstance(long uniqueId, long executionStart, boolean isRecurring, long waitTime, Runnable runnable) {
+		private TimerRunInstance(long uniqueId, long executionStart, long iterations, long waitTime, Runnable runnable) {
             this.uniqueId = uniqueId;
             this.executionStart = executionStart;
-            this.isRecurring = isRecurring;
+			this.iterations = iterations;
             this.waitTime = waitTime;
             this.runnable = runnable;
         }
