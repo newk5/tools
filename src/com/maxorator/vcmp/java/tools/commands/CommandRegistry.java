@@ -67,10 +67,11 @@ public class CommandRegistry {
         CommandParameterInfo[] parameters = new CommandParameterInfo[types.length - 1];
 
         for (int i = 0; i < types.length - 1; i++) {
+            boolean optional = false;
             boolean mayNotFind = false;
             boolean fuzzySearch = false;
             boolean allMatch = false;
-
+            
             for (int j = 0; j < annotations[i + 1].length; j++) {
                 if (annotations[i + 1][j] instanceof PartialMatch) {
                     fuzzySearch = true;
@@ -79,8 +80,17 @@ public class CommandRegistry {
                 } else if (annotations[i + 1][j] instanceof AllMatch) {
                     allMatch = true;
                 }
+                
+                if (annotations[i + 1][j] instanceof Optional) {   
+                    optional = true;
+                }
             }
 
+            if(!optional && i != 0 && parameters[i - 1].optional) {
+                System.err.println("Cannot add command " + commandName + ": Non-optional Parameter " + (i + 2) + " cannot be added after an @Optional parameter.");
+                return;
+            }
+            
             if (!supportedTypes.contains(types[i])) {
                 System.err.println("Cannot add command " + commandName + ": Parameter " + (i + 2) + " is of unsupported type " + types[i + 1].getName() + ".");
                 return;
@@ -88,7 +98,7 @@ public class CommandRegistry {
 
             builtUsage += "<" + types[i + 1].getSimpleName().toLowerCase() + "> ";
 
-            parameters[i] = new CommandParameterInfo(types[i + 1], mayNotFind, fuzzySearch, allMatch);
+            parameters[i] = new CommandParameterInfo(types[i + 1], mayNotFind, fuzzySearch, allMatch, optional);
         }
 
         String usage = config.usage().isEmpty() ? builtUsage : config.usage();
@@ -239,7 +249,7 @@ public class CommandRegistry {
     }
 
     private boolean runCommand(Player player, CommandInfo command, String[] parameters) {
-        if (command.parameters.length != parameters.length) {
+        if (parameters.length < command.getMinParamLength()) {
             return false;
         }
 
@@ -248,7 +258,8 @@ public class CommandRegistry {
             values[0] = player;
 
             for (int i = 0; i < command.parameters.length; i++) {
-                values[i + 1] = parseParameter(player, command.parameters[i], parameters[i]);
+                if(i >= parameters.length) values[i + 1] = null;
+                else values[i + 1] = parseParameter(player, command.parameters[i], parameters[i]);
             }
 
             command.method.invoke(command.controller, values);

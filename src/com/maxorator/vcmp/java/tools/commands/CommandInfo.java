@@ -16,7 +16,15 @@ public class CommandInfo {
         this.usage = usage;
         this.parameters = parameters;
     }
-
+    
+    public int getMinParamLength() {
+        int count = 0;
+        for(CommandParameterInfo param : parameters) {
+            if(!param.optional) count++;
+        }
+        return count;
+    }
+    
     public boolean endsWithString() {
         return parameters.length > 0 && parameters[parameters.length - 1].klass == String.class;
     }
