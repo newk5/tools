@@ -7,8 +7,10 @@ import com.maxorator.vcmp.java.plugin.integration.player.Player;
 import com.maxorator.vcmp.java.plugin.integration.server.Server;
 
 import java.lang.annotation.Annotation;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +55,95 @@ public class CommandRegistry {
         server.sendClientMessage(player, colour, prefix + message);
     }
 
+    protected Method getPostCmdMethod(BaseCommand c) {
+        for (Method method : c.getClass().getDeclaredMethods()) {
+            if (method.isAnnotationPresent(PostCommand.class)) {
+                return method;
+            }
+        }
+        return null;
+    }
+
+    protected boolean hasSameParams(Method m1, Method m2) {
+        if (m1.getParameterCount() == m2.getParameterCount()) {
+            return Arrays.equals(m1.getParameterTypes(), m2.getParameterTypes());
+        }
+        return false;
+    }
+
+    protected Method getPreCmdMethod(BaseCommand c) {
+        for (Method method : c.getClass().getDeclaredMethods()) {
+            if (method.isAnnotationPresent(PreCommand.class)) {
+                return method;
+            }
+        }
+        return null;
+    }
+
+    protected void processMethod(BaseCommand controller, Method method, Command config) {
+        Class<?>[] types = method.getParameterTypes();
+        Annotation[][] annotations = method.getParameterAnnotations();
+        String commandName = config.name().isEmpty() ? method.getName().toLowerCase() : config.name();
+        String builtUsage = "";
+
+        CommandParameterInfo[] parameters = new CommandParameterInfo[types.length];
+
+        for (int i = 0; i < types.length; i++) {
+            boolean mayNotFind = false;
+            boolean fuzzySearch = false;
+            boolean allMatch = false;
+
+            for (int j = 0; j < annotations[i].length; j++) {
+                if (annotations[i + 1][j] instanceof PartialMatch) {
+                    fuzzySearch = true;
+                } else if (annotations[i][j] instanceof NullIfNotFound) {
+                    mayNotFind = true;
+                } else if (annotations[i][j] instanceof AllMatch) {
+                    allMatch = true;
+                }
+            }
+
+            if (!supportedTypes.contains(types[i])) {
+                System.err.println("Cannot add command " + commandName + ": Parameter " + (i + 2) + " is of unsupported type " + types[i + 1].getName() + ".");
+                return;
+            }
+
+            builtUsage += "<" + types[i].getSimpleName().toLowerCase() + "> ";
+
+            parameters[i] = new CommandParameterInfo(types[i], mayNotFind, fuzzySearch, allMatch);
+        }
+
+        String usage = config.usage().isEmpty() ? builtUsage : config.usage();
+
+        Method pre = getPreCmdMethod(controller);
+        Method post = getPostCmdMethod(controller);
+        boolean preHasSameSig = hasSameParams(pre, method);
+        boolean postHasSameSig = hasSameParams(post, method);
+
+        CommandInfo commandInfo = new CommandInfo(controller, method, commandName, usage, parameters, preHasSameSig ? pre : null, postHasSameSig ? post : null);
+
+        if (config.validator() != null) {
+            Constructor[] ctors = config.validator().getConstructors();
+            if (ctors.length == 0) {
+                System.err.println("ERROR: Failed to add converter " + config.name() + ", must have a default constructor!");
+            } else {
+                try {
+                    Object instance = ctors[0].newInstance();
+                    if (instance instanceof CommandValidator) {
+                        commandInfo.validator = (CommandValidator) instance;
+                    } else {
+                        System.err.println("ERROR: Failed to add converter " + config.name() + ", class must extend CommandValidator");
+
+                    }
+                } catch (Exception invocationTargetException) {
+                }
+
+            }
+        }
+
+        commands.put(commandInfo.name, commandInfo);
+    }
+
     protected void processMethod(CommandController controller, Method method, Command config) {
         Class<?>[] types = method.getParameterTypes();
         Annotation[][] annotations = method.getParameterAnnotations();
@@ -94,6 +185,25 @@ public class CommandRegistry {
         String usage = config.usage().isEmpty() ? builtUsage : config.usage();
 
         CommandInfo commandInfo = new CommandInfo(controller, method, commandName, usage, parameters);
+
+        if (config.validator() != null) {
+            Constructor[] ctors = config.validator().getConstructors();
+            if (ctors.length == 0) {
+                System.err.println("ERROR: Failed to add converter " + config.name() + ", must have a default constructor!");
+            } else {
+                try {
+                    Object instance = ctors[0].newInstance();
+                    if (instance instanceof CommandValidator) {
+                        commandInfo.validator = (CommandValidator) instance;
+                    } else {
+                        System.err.println("ERROR: Failed to add converter " + config.name() + ", class must extend CommandValidator");
+
+                    }
+                } catch (Exception invocationTargetException) {
+                }
+
+            }
+        }
         commands.put(commandInfo.name, commandInfo);
     }
 
@@ -101,6 +211,15 @@ public class CommandRegistry {
         for (Method method : controller.getClass().getDeclaredMethods()) {
             if (method.isAnnotationPresent(Command.class)) {
                 processMethod(controller, method, method.getAnnotation(Command.class));
+            }
+        }
+    }
+
+    public void addCmd(BaseCommand controller) {
+        for (Method method : controller.getClass().getDeclaredMethods()) {
+            if (method.isAnnotationPresent(Command.class)) {
+                processMethod(controller, method, method.getAnnotation(Command.class));
+                break;
             }
         }
     }
@@ -244,19 +363,59 @@ public class CommandRegistry {
         }
 
         try {
-            Object[] values = new Object[command.parameters.length + 1];
-            values[0] = player;
 
-            for (int i = 0; i < command.parameters.length; i++) {
-                values[i + 1] = parseParameter(player, command.parameters[i], parameters[i]);
+            if (command.controller != null) {
+                Object[] values = new Object[command.parameters.length + 1];
+                values[0] = player;
+
+                boolean isValid = command.validator == null;
+
+                if (command.validator != null) {
+                    isValid = command.validator.isValid(player);
+                }
+
+                if (isValid) {
+                    for (int i = 0; i < command.parameters.length; i++) {
+                        values[i + 1] = parseParameter(player, command.parameters[i], parameters[i]);
+                    }
+                    command.method.invoke(command.controller, values);
+                }
+
+            } else {
+                Object[] values = new Object[command.parameters.length];
+
+                boolean isValid = command.validator == null;
+
+                if (command.validator != null) {
+                    isValid = command.validator.isValid(player);
+                }
+                if (isValid) {
+
+                    for (int i = 0; i < command.parameters.length; i++) {
+                        values[i] = parseParameter(player, command.parameters[i], parameters[i]);
+                    }
+
+                    command.baseCommand.player = player;
+                    if (command.preMethod != null) {
+                        command.preMethod.invoke(command.baseCommand, values);
+                    }
+                    command.method.invoke(command.baseCommand, values);
+                    if (command.postMethod != null) {
+                        command.postMethod.invoke(command.baseCommand, values);
+                    }
+                }
+
             }
 
-            command.method.invoke(command.controller, values);
         } catch (AbortCommandException e) {
             return true;
         } catch (Exception e) {
-            sendResponse(player, "Something went wrong.");
-
+            if (player != null) {
+                sendResponse(player, "Something went wrong.");
+            }
+            if (command.baseCommand != null) {
+                command.baseCommand.failedRun(e);
+            }
             throw new RuntimeException(e);
         }
 
@@ -288,8 +447,14 @@ public class CommandRegistry {
 
         }
 
-        if (!command.controller.checkAccess(player)) {
-            return false;
+        if (command.controller != null) {
+            if (!command.controller.checkAccess(player)) {
+                return false;
+            }
+        } else {
+            if (!command.baseCommand.checkAccess()) {
+                return false;
+            }
         }
 
         String[] parameters = new String[0];
@@ -303,7 +468,9 @@ public class CommandRegistry {
         }
 
         if (!runCommand(player, command, parameters)) {
-            sendResponse(player, String.format(this.usagePrefix + "/%s %s", command.name, command.usage));
+            if (player != null) {
+                sendResponse(player, String.format(this.usagePrefix + "/%s %s", command.name, command.usage));
+            }
         }
 
         return true;

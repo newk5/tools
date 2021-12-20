@@ -444,6 +444,11 @@ public class DelegatingEventHandler extends RootEventHandler {
         }
     }
 
- 
+  /*  @Override
+    public void onEntityStreamingChange(Player player, GameObject object, int entityType, boolean isDeleted) {
+        for (EventHandler eventHandler : delegates) {
+            eventHandler.onEntityStreamingChange(player, object, entityType, isDeleted);
+        }
+    }*/
 
 }

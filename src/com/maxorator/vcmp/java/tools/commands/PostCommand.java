@@ -4,11 +4,5 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 
 @Retention(RetentionPolicy.RUNTIME)
-public @interface Command {
-
-    String name() default "";
-
-    String usage() default "";
-
-    Class validator() default CommandValidator.class;
+public @interface PostCommand {
 }
