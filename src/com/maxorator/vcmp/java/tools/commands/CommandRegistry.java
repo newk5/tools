@@ -89,6 +89,7 @@ public class CommandRegistry {
         CommandParameterInfo[] parameters = new CommandParameterInfo[types.length];
 
         for (int i = 0; i < types.length; i++) {
+            boolean optional = false;
             boolean mayNotFind = false;
             boolean fuzzySearch = false;
             boolean allMatch = false;
@@ -101,6 +102,13 @@ public class CommandRegistry {
                 } else if (annotations[i][j] instanceof AllMatch) {
                     allMatch = true;
                 }
+                if (annotations[i + 1][j] instanceof Optional) {
+                    optional = true;
+                }
+            }
+            if (!optional && i != 0 && parameters[i - 1].optional) {
+                System.err.println("Cannot add command " + commandName + ": Non-optional Parameter " + (i + 2) + " cannot be added after an @Optional parameter.");
+                return;
             }
 
             if (!supportedTypes.contains(types[i])) {
@@ -110,7 +118,7 @@ public class CommandRegistry {
 
             builtUsage += "<" + types[i].getSimpleName().toLowerCase() + "> ";
 
-            parameters[i] = new CommandParameterInfo(types[i], mayNotFind, fuzzySearch, allMatch);
+            parameters[i] = new CommandParameterInfo(types[i], mayNotFind, fuzzySearch, allMatch, optional);
         }
 
         String usage = config.usage().isEmpty() ? builtUsage : config.usage();
@@ -161,6 +169,7 @@ public class CommandRegistry {
             boolean mayNotFind = false;
             boolean fuzzySearch = false;
             boolean allMatch = false;
+            boolean optional = false;
 
             for (int j = 0; j < annotations[i + 1].length; j++) {
                 if (annotations[i + 1][j] instanceof PartialMatch) {
@@ -170,6 +179,13 @@ public class CommandRegistry {
                 } else if (annotations[i + 1][j] instanceof AllMatch) {
                     allMatch = true;
                 }
+                if (annotations[i + 1][j] instanceof Optional) {
+                    optional = true;
+                }
+            }
+            if (!optional && i != 0 && parameters[i - 1].optional) {
+                System.err.println("Cannot add command " + commandName + ": Non-optional Parameter " + (i + 2) + " cannot be added after an @Optional parameter.");
+                return;
             }
 
             if (!supportedTypes.contains(types[i])) {
@@ -179,7 +195,7 @@ public class CommandRegistry {
 
             builtUsage += "<" + types[i + 1].getSimpleName().toLowerCase() + "> ";
 
-            parameters[i] = new CommandParameterInfo(types[i + 1], mayNotFind, fuzzySearch, allMatch);
+            parameters[i] = new CommandParameterInfo(types[i + 1], mayNotFind, fuzzySearch, allMatch, optional);
         }
 
         String usage = config.usage().isEmpty() ? builtUsage : config.usage();
@@ -376,7 +392,11 @@ public class CommandRegistry {
 
                 if (isValid) {
                     for (int i = 0; i < command.parameters.length; i++) {
-                        values[i + 1] = parseParameter(player, command.parameters[i], parameters[i]);
+                        if (i >= parameters.length) {
+                            values[i + 1] = null;
+                        } else {
+                            values[i + 1] = parseParameter(player, command.parameters[i], parameters[i]);
+                        }
                     }
                     command.method.invoke(command.controller, values);
                 }
@@ -392,7 +412,11 @@ public class CommandRegistry {
                 if (isValid) {
 
                     for (int i = 0; i < command.parameters.length; i++) {
-                        values[i] = parseParameter(player, command.parameters[i], parameters[i]);
+                        if (i >= parameters.length) {
+                            values[i + 1] = null;
+                        } else {
+                            values[i + 1] = parseParameter(player, command.parameters[i], parameters[i]);
+                        }
                     }
 
                     command.baseCommand.player = player;

@@ -3,6 +3,7 @@ package com.maxorator.vcmp.java.tools.commands;
 import java.lang.reflect.Method;
 
 public class CommandInfo {
+
     public final CommandController controller;
     public final Method method;
     public final Method preMethod;
@@ -34,6 +35,16 @@ public class CommandInfo {
         this.preMethod = preMethod;
         this.postMethod = postMethod;
 
+    }
+
+    public int getMinParamLength() {
+        int count = 0;
+        for (CommandParameterInfo param : parameters) {
+            if (!param.optional) {
+                count++;
+            }
+        }
+        return count;
     }
 
     public boolean endsWithString() {
